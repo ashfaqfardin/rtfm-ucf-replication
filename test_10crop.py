@@ -18,13 +18,13 @@ def test(dataloader, model, args, viz, device):
             sig = logits
             pred = torch.cat((pred, sig))
 
-        if args.dataset == 'shanghai':
-            gt = np.load('list/gt-sh.npy')
-        else:
-            gt = np.load('list/gt-ucf.npy')
+        gt = np.load(args.gt)
 
         pred = list(pred.cpu().detach().numpy())
         pred = np.repeat(np.array(pred), 16)
+
+        print("GT length:", len(gt))
+        print("Pred length:", len(pred))
 
         fpr, tpr, threshold = roc_curve(list(gt), pred)
         np.save('fpr.npy', fpr)
@@ -41,4 +41,3 @@ def test(dataloader, model, args, viz, device):
         viz.lines('scores', pred)
         viz.lines('roc', tpr, fpr)
         return rec_auc
-
