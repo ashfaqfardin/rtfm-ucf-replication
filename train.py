@@ -68,7 +68,11 @@ class RTFM_loss(torch.nn.Module):
 
         loss_cls = self.criterion(score, label)  # BCE loss in the score space
 
-        loss_abn = torch.abs(self.margin - torch.norm(torch.mean(feat_a, dim=1), p=2, dim=1))
+        # Dynamic margin based on the normal batch features
+        normal_mags = torch.norm(feat_n, p=2, dim=-1)
+        dynamic_margin = torch.mean(normal_mags) * 0.5
+        
+        loss_abn = torch.abs(dynamic_margin - torch.norm(torch.mean(feat_a, dim=1), p=2, dim=1))
 
         loss_nor = torch.norm(torch.mean(feat_n, dim=1), p=2, dim=1)
 

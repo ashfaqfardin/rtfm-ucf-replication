@@ -37,8 +37,14 @@ if __name__ == '__main__':
     if not os.path.exists('./ckpt'):
         os.makedirs('./ckpt')
 
-    optimizer = optim.Adam(model.parameters(),
-                            lr=config.lr[0], weight_decay=0.005)
+    fft_branch_params = list(map(id, model.fft_branch.parameters()))
+    base_params = filter(lambda p: id(p) not in fft_branch_params,
+                         model.parameters())
+
+    optimizer = optim.Adam([
+        {'params': base_params},
+        {'params': model.fft_branch.parameters(), 'lr': config.lr[0] * 0.1}
+    ], lr=config.lr[0], weight_decay=0.005)
 
     test_info = {"epoch": [], "test_AUC": []}
     best_AUC = -1
@@ -51,8 +57,8 @@ if __name__ == '__main__':
             dynamic_ncols=True
     ):
         if step > 1 and config.lr[step - 1] != config.lr[step - 2]:
-            for param_group in optimizer.param_groups:
-                param_group["lr"] = config.lr[step - 1]
+            optimizer.param_groups[0]["lr"] = config.lr[step - 1]
+            optimizer.param_groups[1]["lr"] = config.lr[step - 1] * 0.1
 
         if (step - 1) % len(train_nloader) == 0:
             loadern_iter = iter(train_nloader)

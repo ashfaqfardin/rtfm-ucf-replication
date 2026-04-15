@@ -10,6 +10,40 @@ def weight_init(m):
         if m.bias is not None:
             m.bias.data.fill_(0)
 
+class DualBranchFFT1D(nn.Module):
+    def __init__(self, feature_dim=2048):
+        super(DualBranchFFT1D, self).__init__()
+        self.channel_attention_mlp = nn.Sequential(
+            nn.Linear(feature_dim * 2, feature_dim),
+            nn.ReLU(inplace=True),
+            nn.Linear(feature_dim, feature_dim)
+        )
+
+    def forward(self, x):
+        fft_full = torch.fft.fft(x, dim=1)
+        mag_full = torch.abs(fft_full)
+        phase_full = torch.angle(fft_full)
+        complex_concat = torch.cat([mag_full, phase_full], dim=-1)
+        enriched_query_features = self.channel_attention_mlp(complex_concat)
+        return enriched_query_features
+
+class TemporalMQCA(nn.Module):
+    def __init__(self, feature_dim=2048, num_heads=8):
+        super(TemporalMQCA, self).__init__()
+        self.num_heads = num_heads
+        self.query_proj = nn.Linear(feature_dim, feature_dim)
+        self.key_proj = nn.Linear(feature_dim, feature_dim)
+        self.value_proj = nn.Linear(feature_dim, feature_dim)
+        self.attention = nn.MultiheadAttention(embed_dim=feature_dim, num_heads=num_heads, batch_first=True)
+
+    def forward(self, frequency_features, spatial_temporal_features):
+        Q = self.query_proj(frequency_features)
+        K = self.key_proj(spatial_temporal_features)
+        V = self.value_proj(spatial_temporal_features)
+        attn_output, _ = self.attention(Q, K, V)
+        refined_features = attn_output + spatial_temporal_features
+        return refined_features
+
 class _NonLocalBlockND(nn.Module):
     def __init__(self, in_channels, inter_channels=None, dimension=3, sub_sample=True, bn_layer=True):
         super(_NonLocalBlockND, self).__init__()
@@ -178,6 +212,8 @@ class Model(nn.Module):
         self.k_abn = self.num_segments // 10
         self.k_nor = self.num_segments // 10
 
+        self.fft_branch = DualBranchFFT1D(n_features)
+        self.mqca_block = TemporalMQCA(n_features)
         self.Aggregate = Aggregate(len_feature=2048)
         self.fc1 = nn.Linear(n_features, 512)
         self.fc2 = nn.Linear(512, 128)
@@ -198,7 +234,9 @@ class Model(nn.Module):
 
         out = out.view(-1, t, f)
 
-        out = self.Aggregate(out)
+        freq_q = self.fft_branch(out)
+        refined_features = self.mqca_block(freq_q, out)
+        out = self.Aggregate(refined_features)
 
         out = self.drop_out(out)
 

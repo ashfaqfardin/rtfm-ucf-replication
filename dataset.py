@@ -41,13 +41,11 @@ class Dataset(data.Dataset):
 
             elif self.dataset == 'ucf':
                 if self.is_normal:
-                    self.list = self.list[810:]
-                    print('normal list for ucf')
-                    print(self.list)
+                    self.list = [x for x in self.list if 'Normal_Videos' in x]
+                    print(f'normal list for ucf (len {len(self.list)})')
                 else:
-                    self.list = self.list[:810]
-                    print('abnormal list for ucf')
-                    print(self.list)
+                    self.list = [x for x in self.list if 'Normal_Videos' not in x]
+                    print(f'abnormal list for ucf (len {len(self.list)})')
 
     def __getitem__(self, index):
         label = self.get_label()  # video-level label 0/1
