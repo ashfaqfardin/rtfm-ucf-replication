@@ -23,7 +23,8 @@ class DualBranchFFT1D(nn.Module):
         fft_full = torch.fft.fft(x, dim=1)
         mag_full = torch.abs(fft_full)
         phase_full = torch.angle(fft_full)
-        complex_concat = torch.cat([mag_full, phase_full], dim=-1)
+        phase_diff = torch.diff(phase_full, dim=1, prepend=phase_full[:, :1, :])
+        complex_concat = torch.cat([mag_full, phase_diff], dim=-1)
         enriched_query_features = self.channel_attention_mlp(complex_concat)
         return enriched_query_features
 
