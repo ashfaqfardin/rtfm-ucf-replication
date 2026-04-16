@@ -56,9 +56,13 @@ if __name__ == '__main__':
             total=args.max_epoch,
             dynamic_ncols=True
     ):
-        if step > 1 and config.lr[step - 1] != config.lr[step - 2]:
-            optimizer.param_groups[0]["lr"] = config.lr[step - 1]
-            optimizer.param_groups[1]["lr"] = config.lr[step - 1] * 0.1
+        # Clamp indices to the length of the learning rate array to avoid IndexError
+        lr_idx = min(step - 1, len(config.lr) - 1)
+        prev_lr_idx = min(step - 2, len(config.lr) - 1)
+        
+        if step > 1 and config.lr[lr_idx] != config.lr[prev_lr_idx]:
+            optimizer.param_groups[0]["lr"] = config.lr[lr_idx]
+            optimizer.param_groups[1]["lr"] = config.lr[lr_idx] * 0.1
 
         if (step - 1) % len(train_nloader) == 0:
             loadern_iter = iter(train_nloader)
