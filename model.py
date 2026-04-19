@@ -56,7 +56,7 @@ class DualBranchFFT1D(nn.Module):
         
         complex_concat = torch.cat([mag_time, phase_diff_time], dim=-1)
         enriched_query_features = self.channel_attention_mlp(complex_concat)
-        return enriched_query_features
+        return enriched_query_features, phase_diff_time
 
 class TemporalMQCA(nn.Module):
     def __init__(self, feature_dim=2048, num_heads=8):
@@ -265,13 +265,34 @@ class Model(nn.Module):
 
         out = out.view(-1, t, f)
 
-        freq_q = self.fft_branch(out)
+        freq_q, phase_diff_time = self.fft_branch(out)
         refined_features = self.mqca_block(freq_q, out)
         out = self.Aggregate(refined_features)
 
         out = self.drop_out(out)
 
         features = out
+        
+        # --- Phase-Guided Temporal Segmentation ---
+        phase_changes = torch.norm(phase_diff_time, p=2, dim=-1)
+        # Using dynamic threshold (mean + 0.5 * std) per sequence to find boundaries
+        # For UCF-Crime I3D, this helps stabilize the noisy snippets.
+        thresh = phase_changes.mean(dim=1, keepdim=True) + 0.5 * phase_changes.std(dim=1, keepdim=True)
+        boundaries = (phase_changes > thresh).int()
+        
+        # Guarantee snippet 0 starts segment 0
+        boundaries[:, 0] = 1
+        
+        # Create Segment Assignments
+        segment_ids = torch.cumsum(boundaries, dim=1)
+        
+        # Construct Adjacency / Averaging Matrix
+        M = (segment_ids.unsqueeze(1) == segment_ids.unsqueeze(2)).float()
+        
+        # Averaging snippets falling in the same segment
+        features = torch.bmm(M, features) / M.sum(dim=-1, keepdim=True)
+        # ------------------------------------------
+
         scores = self.relu(self.fc1(features))
         scores = self.drop_out(scores)
         scores = self.relu(self.fc2(scores))
