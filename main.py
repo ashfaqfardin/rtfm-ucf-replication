@@ -10,6 +10,7 @@ import option
 from tqdm import tqdm
 from utils import Visualizer
 from config import *
+import numpy as np
 
 viz = Visualizer(env='ucf crime 10 crop', use_incoming_socket=False)
 
@@ -49,7 +50,7 @@ if __name__ == '__main__':
     test_info = {"epoch": [], "test_AUC": []}
     best_AUC = -1
     output_path = ''   # put your own path here
-    auc = test(test_loader, model, args, viz, device)
+    auc, _, _, _, _ = test(test_loader, model, args, viz, device)
 
     for step in tqdm(
             range(1, args.max_epoch + 1),
@@ -72,15 +73,19 @@ if __name__ == '__main__':
 
         train(loadern_iter, loadera_iter, model, args.batch_size, optimizer, viz, device)
 
-        if step % 5 == 0 and step > 200:
+        if step % 5 == 0:
 
-            auc = test(test_loader, model, args, viz, device)
+            auc, fpr, tpr, precision, recall = test(test_loader, model, args, viz, device)
             test_info["epoch"].append(step)
             test_info["test_AUC"].append(auc)
 
             if test_info["test_AUC"][-1] > best_AUC:
                 best_AUC = test_info["test_AUC"][-1]
                 torch.save(model.state_dict(), './ckpt/' + args.model_name + '{}-i3d.pkl'.format(step))
+                torch.save(model.state_dict(), './ckpt/' + args.model_name + 'final.pkl')
+                np.save('fpr.npy', fpr)
+                np.save('tpr.npy', tpr)
+                np.save('precision.npy', precision)
+                np.save('recall.npy', recall)
                 save_best_record(test_info, os.path.join(output_path, '{}-step-AUC.txt'.format(step)))
-    torch.save(model.state_dict(), './ckpt/' + args.model_name + 'final.pkl')
 

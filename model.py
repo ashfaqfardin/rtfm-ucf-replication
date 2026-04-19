@@ -10,6 +10,29 @@ def weight_init(m):
         if m.bias is not None:
             m.bias.data.fill_(0)
 
+def hilbert_transform(x, dim=1):
+    # Compute FFT
+    Xf = torch.fft.fft(x, dim=dim)
+    N = x.shape[dim]
+    
+    # Create the Hilbert multiplier (doubles positive frequencies, zeros negative ones)
+    h = torch.zeros(N, device=x.device)
+    if N % 2 == 0:
+        h[0] = h[N // 2] = 1
+        h[1:N // 2] = 2
+    else:
+        h[0] = 1
+        h[1:(N + 1) // 2] = 2
+        
+    # Reshape h to broadcast correctly across the tensor
+    shape = [1] * x.dim()
+    shape[dim] = N
+    h = h.view(*shape)
+    
+    # Inverse FFT to get the analytic signal in the time domain
+    analytic_signal = torch.fft.ifft(Xf * h, dim=dim)
+    return analytic_signal
+
 class DualBranchFFT1D(nn.Module):
     def __init__(self, feature_dim=2048):
         super(DualBranchFFT1D, self).__init__()
@@ -20,11 +43,18 @@ class DualBranchFFT1D(nn.Module):
         )
 
     def forward(self, x):
-        fft_full = torch.fft.fft(x, dim=1)
-        mag_full = torch.abs(fft_full)
-        phase_full = torch.angle(fft_full)
-        phase_diff = torch.diff(phase_full, dim=1, prepend=phase_full[:, :1, :])
-        complex_concat = torch.cat([mag_full, phase_diff], dim=-1)
+        # 1. Get the complex time-domain signal
+        analytic_x = hilbert_transform(x, dim=1)
+        
+        # 2. Get instantaneous magnitude and phase (Time Domain)
+        mag_time = torch.abs(analytic_x)
+        phase_time = torch.angle(analytic_x)
+        
+        # 3. Get temporal phase difference (and correct for wrapping)
+        raw_phase_diff = torch.diff(phase_time, dim=1, prepend=phase_time[:, :1, :])
+        phase_diff_time = (raw_phase_diff + torch.pi) % (2 * torch.pi) - torch.pi
+        
+        complex_concat = torch.cat([mag_time, phase_diff_time], dim=-1)
         enriched_query_features = self.channel_attention_mlp(complex_concat)
         return enriched_query_features
 
